@@ -28,20 +28,13 @@
  * A global constant String holding the title of the add-on. This is
  * used to identify the add-on in the notification emails.
  */
-var ADDON_TITLE = 'Form Notifications';
+var ADDON_TITLE = 'Webform Notifications';
 
 /**
  * A global constant 'notice' text to include with each email
  * notification.
  */
-var NOTICE = "Form Notifications was created as an sample add-on, and is meant for \
-demonstration purposes only. It should not be used for complex or important \
-workflows. The number of notifications this add-on produces are limited by the \
-owner's available email quota; it will not send email notifications if the \
-owner's daily email quota has been exceeded. Collaborators using this add-on on \
-the same form will be able to adjust the notification settings, but will not be \
-able to disable the notification triggers set by other collaborators.";
-
+var NOTICE = '';
 
 /**
  * Adds a custom menu to the active form to show the add-on sidebar.
@@ -78,7 +71,7 @@ function onInstall(e) {
 function showSidebar() {
   var ui = HtmlService.createHtmlOutputFromFile('Sidebar')
       .setSandboxMode(HtmlService.SandboxMode.IFRAME)
-      .setTitle('Form Notifications');
+      .setTitle(ADDON_TITLE);
   FormApp.getUi().showSidebar(ui);
 }
 
@@ -91,7 +84,7 @@ function showAbout() {
       .setSandboxMode(HtmlService.SandboxMode.IFRAME)
       .setWidth(420)
       .setHeight(270);
-  FormApp.getUi().showModalDialog(ui, 'About Form Notifications');
+  FormApp.getUi().showModalDialog(ui, 'About ' + ADDON_TITLE);
 }
 
 /**
@@ -142,9 +135,7 @@ function adjustFormSubmitTrigger() {
   var form = FormApp.getActiveForm();
   var triggers = ScriptApp.getUserTriggers(form);
   var settings = PropertiesService.getDocumentProperties();
-  var triggerNeeded =
-      settings.getProperty('creatorNotify') == 'true' ||
-      settings.getProperty('respondentNotify') == 'true';
+  var triggerNeeded = settings.getProperty('creatorNotify') == 'true';
 
   // Create a new trigger if required; delete existing trigger
   //   if it is not needed.
@@ -181,8 +172,7 @@ function respondToFormSubmit(e) {
   // been supplied yet -- if so, warn the active user via email (if possible).
   // This check is required when using triggers with add-ons to maintain
   // functional triggers.
-  if (authInfo.getAuthorizationStatus() ==
-      ScriptApp.AuthorizationStatus.REQUIRED) {
+  if (authInfo.getAuthorizationStatus() == ScriptApp.AuthorizationStatus.REQUIRED) {
     // Re-authorization is required. In this case, the user needs to be alerted
     // that they need to reauthorize; the normal trigger action is not
     // conducted, since authorization needs to be provided first. Send at
@@ -193,21 +183,12 @@ function respondToFormSubmit(e) {
     // All required authorizations have been granted, so continue to respond to
     // the trigger event.
 
-    // Check if the form creator needs to be notified; if so, construct and
-    // send the notification.
+    // Creator email trigger.
     if (settings.getProperty('creatorNotify') == 'true') {
       sendCreatorNotification();
     }
-
-    // Check if the form respondent needs to be notified; if so, construct and
-    // send the notification. Be sure to respect the remaining email quota.
-    if (settings.getProperty('respondentNotify') == 'true' &&
-        MailApp.getRemainingDailyQuota() > 0) {
-      sendRespondentNotification(e.response);
-    }
   }
 }
-
 
 /**
  * Called when the user needs to reauthorize. Sends the user of the
@@ -239,7 +220,7 @@ function sendReauthorizationRequest() {
 }
 
 /**
- * Sends out creator notification email(s) if the current number
+ * Sends out HTML-based creator notification email(s) if the current number
  * of form responses is an even multiple of the response step
  * setting.
  */
@@ -247,7 +228,7 @@ function sendCreatorNotification() {
   var form = FormApp.getActiveForm();
   var settings = PropertiesService.getDocumentProperties();
   var responseStep = settings.getProperty('responseStep');
-  responseStep = responseStep ? parseInt(responseStep) : 10;
+  responseStep = responseStep ? parseInt(responseStep) : 1;
 
   // If the total number of form responses is an even multiple of the
   // response step setting, send a notification email(s) to the form
@@ -255,53 +236,51 @@ function sendCreatorNotification() {
   // will be sent when there are 10, 20, 30, etc. total form responses
   // received.
   if (form.getResponses().length % responseStep == 0) {
-    var addresses = settings.getProperty('creatorEmail').split(',');
-    if (MailApp.getRemainingDailyQuota() > addresses.length) {
-      var template =
-          HtmlService.createTemplateFromFile('CreatorNotification');
-      template.sheet =
-          DriveApp.getFileById(form.getDestinationId()).getUrl();
-      template.summary = form.getSummaryUrl();
-      template.responses = form.getResponses().length;
-      template.title = form.getTitle();
-      template.responseStep = responseStep;
-      template.formUrl = form.getEditUrl();
-      template.notice = NOTICE;
-      var message = template.evaluate();
-      MailApp.sendEmail(settings.getProperty('creatorEmail'),
-          form.getTitle() + ': Form submissions detected',
-          message.getContent(), {
-            name: ADDON_TITLE,
-            htmlBody: message.getContent()
-          });
-    }
+    sendCreatorHtmlEmails(form, settings, settings.getProperty('creatorHtmlEmailAddresses'));
+    sendCreatorTextEmails(form, settings, settings.getProperty('creatorTextEmailAddresses'));
   }
 }
 
-/**
- * Sends out respondent notification emails.
- *
- * @param {FormResponse} response FormResponse object of the event
- *      that triggered this notification
- */
-function sendRespondentNotification(response) {
-  var form = FormApp.getActiveForm();
-  var settings = PropertiesService.getDocumentProperties();
-  var emailId = settings.getProperty('respondentEmailItemId');
-  var emailItem = form.getItemById(parseInt(emailId));
-  var respondentEmail = response.getResponseForItem(emailItem)
-      .getResponse();
-  if (respondentEmail) {
-    var template =
-        HtmlService.createTemplateFromFile('RespondentNotification');
-    template.paragraphs = settings.getProperty('responseText').split('\n');
-    template.notice = NOTICE;
-    var message = template.evaluate();
-    MailApp.sendEmail(respondentEmail,
-        settings.getProperty('responseSubject'),
-        message.getContent(), {
-          name: form.getTitle(),
-            htmlBody: message.getContent()
-        });
-  }
+function sendCreatorHtmlEmails(form, settings, emails) {
+  if (!emails) return;
+  var addresses = emails.split(',');
+  if (MailApp.getRemainingDailyQuota() <= addresses.length) return;
+
+  var template = HtmlService.createTemplateFromFile('CreatorHtmlNotification');
+  template.sheet = DriveApp.getFileById(form.getDestinationId()).getUrl();
+  template.summary = form.getSummaryUrl();
+  template.responses = form.getResponses().length;
+  template.title = form.getTitle();
+  template.formUrl = form.getEditUrl();
+  template.notice = NOTICE;
+  var message = template.evaluate();
+  MailApp.sendEmail(emails,
+                    form.getTitle() + ': Form submitted',
+                    message.getContent(), {
+                      name: ADDON_TITLE,
+                      htmlBody: message.getContent()
+                    });
 }
+
+function sendCreatorTextEmails(form, settings, emails) {
+  if (!emails) return;
+  var addresses = emails.split(',');
+  if (MailApp.getRemainingDailyQuota() <= addresses.length) return;
+
+  var template = HtmlService.createTemplateFromFile('CreatorTextNotification');
+  template.sheet = DriveApp.getFileById(form.getDestinationId()).getUrl();
+  template.summary = form.getSummaryUrl();
+  template.responses = form.getResponses().length;
+  template.title = form.getTitle();
+  template.formUrl = form.getEditUrl();
+  template.notice = NOTICE;
+  var message = template.evaluate();
+  MailApp.sendEmail(emails,
+                    form.getTitle() + ': Form submitted',
+                    message.getContent(), {
+                      name: ADDON_TITLE,
+                      htmlBody: message.getContent()
+                    });
+}
+
+// vim:filetype=javascript
