@@ -255,7 +255,7 @@ function sendCreatorHtmlEmails(form, settings, emails) {
   template.notice = NOTICE;
   var message = template.evaluate();
   MailApp.sendEmail(emails,
-                    form.getTitle() + ': Form submitted',
+                    form.getTitle() + ' form submitted',
                     message.getContent(), {
                       name: ADDON_TITLE,
                       htmlBody: message.getContent()
@@ -276,7 +276,7 @@ function sendCreatorTextEmails(form, settings, emails) {
   template.notice = NOTICE;
   var message = template.evaluate();
   MailApp.sendEmail(emails,
-                    form.getTitle() + ': Form submitted',
+                    form.getTitle() + ' form submitted',
                     message.getContent(), {
                       name: ADDON_TITLE,
                       htmlBody: message.getContent()
